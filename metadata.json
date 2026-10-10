@@ -1,0 +1,6 @@
+{
+  "name": "Amico - Compagno Vocale di Italiano",
+  "description": "Applicazione immersiva per imparare l'italiano attraverso la conversazione vocale naturale in tempo reale, correzione intelligente, memoria pedagogica e valutazione CECRL.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

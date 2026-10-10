@@ -1,0 +1,306 @@
+{
+  "name": "Studente",
+  "companionName": "Marco",
+  "companionAvatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80",
+  "voiceGender": "male",
+  "voiceSpeed": 1,
+  "voiceEngine": "gemini_neural",
+  "pauseToleranceMs": 3000,
+  "correctionMode": "targeted",
+  "conversationStyle": "amico",
+  "estimatedCefrLevel": "B1",
+  "dailyGoalMinutes": 10,
+  "todayPracticeSeconds": 988,
+  "streakDays": 4,
+  "longestStreakDays": 6,
+  "streakHistory": [
+    "2026-10-07",
+    "2026-10-08",
+    "2026-10-09",
+    "2026-10-10"
+  ],
+  "lastSessionDate": "2026-10-10",
+  "confidenceScore": 78,
+  "multiDimensions": {
+    "listeningComprehension": {
+      "score": 68,
+      "estimatedLevel": "B1",
+      "confidence": 80,
+      "recentTrend": "in_crescita",
+      "observableExamples": [
+        "Capisce le domande aperte e risponde a tono senza ripetizioni."
+      ]
+    },
+    "grammaticalAccuracy": {
+      "score": 58,
+      "estimatedLevel": "A2",
+      "confidence": 75,
+      "recentTrend": "stabile",
+      "observableExamples": [
+        "Uso corretto del presente indicativo; incertezze su passato prossimo vs imperfetto."
+      ]
+    },
+    "vocabularyRichness": {
+      "score": 62,
+      "estimatedLevel": "B1",
+      "confidence": 70,
+      "recentTrend": "in_crescita",
+      "observableExamples": [
+        "Vocabolario adeguato per argomenti quotidiani; pochi sinonimi astratti."
+      ]
+    },
+    "spontaneousVocabulary": {
+      "score": 60,
+      "estimatedLevel": "B1",
+      "confidence": 72,
+      "recentTrend": "in_crescita",
+      "observableExamples": [
+        "Usa parole chiave con prontezza; ricorre raramente alla lingua madre."
+      ]
+    },
+    "fluency": {
+      "score": 64,
+      "estimatedLevel": "B1",
+      "confidence": 78,
+      "recentTrend": "in_crescita",
+      "observableExamples": [
+        "Pause di riflessione naturali; buon ritmo nelle frasi affermative brevi."
+      ]
+    },
+    "pronunciationIntelligibility": {
+      "score": 72,
+      "estimatedLevel": "B1",
+      "confidence": 82,
+      "recentTrend": "stabile",
+      "observableExamples": [
+        "Intelligibilità elevata; attenzione al raddoppiamento fonosintattico e alle vocali chiuse."
+      ]
+    },
+    "discourseCoherence": {
+      "score": 61,
+      "estimatedLevel": "B1",
+      "confidence": 65,
+      "recentTrend": "stabile",
+      "observableExamples": [
+        "Collega le frasi con connettori semplici (e, ma, perché, quindi)."
+      ]
+    },
+    "argumentation": {
+      "score": 52,
+      "estimatedLevel": "A2",
+      "confidence": 60,
+      "recentTrend": "dati_insufficienti",
+      "observableExamples": [
+        "Esprime preferenze personali; necessita di guida per contro-argomentare."
+      ]
+    },
+    "interaction": {
+      "score": 74,
+      "estimatedLevel": "B1",
+      "confidence": 85,
+      "recentTrend": "in_crescita",
+      "observableExamples": [
+        "Ottima reattività nelle risposte; gestione spontanea dei turni di parola."
+      ]
+    },
+    "complexTopics": {
+      "score": 48,
+      "estimatedLevel": "A2",
+      "confidence": 55,
+      "recentTrend": "dati_insufficienti",
+      "observableExamples": [
+        "Preferisce temi concreti ed esperienziali rispetto ad astrazioni teoriche."
+      ]
+    }
+  },
+  "memories": [
+    {
+      "id": "mem_1",
+      "content": "Ama viaggiare in treno in Italia e vorrebbe visitare la Sicilia e Bologna.",
+      "category": "interesse",
+      "createdAt": 1791393661446
+    },
+    {
+      "id": "mem_2",
+      "content": "Obiettivo: sostenere una conversazione di 20 minuti senza blocchi o ansia.",
+      "category": "obiettivo",
+      "createdAt": 1791220861446
+    },
+    {
+      "id": "mem_3",
+      "content": "Lavora nel settore digitale e gli piace la cucina toscana.",
+      "category": "aneddoto",
+      "createdAt": 1791480061446
+    }
+  ],
+  "errors": [
+    {
+      "id": "err_1791655901298",
+      "timestamp": 1791655901298,
+      "originalText": "",
+      "correctedText": "",
+      "category": "grammatica",
+      "severity": "lieve",
+      "ruleKey": "accordo_soggetto_verbo_plurale",
+      "ruleName": "Accordo tra soggetto e verbo (singolare/plurale)",
+      "explanation": "Uso raccomandato in italiano.",
+      "example": "",
+      "status": "rilevata_una_volta",
+      "timesEncountered": 1,
+      "lastPracticed": 1791655901298
+    },
+    {
+      "id": "err_1791655729253",
+      "timestamp": 1791655729253,
+      "originalText": "",
+      "correctedText": "",
+      "category": "concordanza",
+      "severity": "lieve",
+      "ruleKey": "genere_sostantivi_tema",
+      "ruleName": "Genere maschile del sostantivo 'tema'",
+      "explanation": "Uso raccomandato in italiano.",
+      "example": "",
+      "status": "rilevata_una_volta",
+      "timesEncountered": 1,
+      "lastPracticed": 1791655729253
+    },
+    {
+      "id": "err_1791655651240",
+      "timestamp": 1791655651240,
+      "originalText": "",
+      "correctedText": "",
+      "category": "concordanza",
+      "severity": "moderata",
+      "ruleKey": "genere_sostantivi_in_ma",
+      "ruleName": "Genere maschile dei sostantivi in -ma di origine greca",
+      "explanation": "Uso raccomandato in italiano.",
+      "example": "",
+      "status": "rilevata_una_volta",
+      "timesEncountered": 1,
+      "lastPracticed": 1791655651240
+    },
+    {
+      "id": "err_1791655573682",
+      "timestamp": 1791655573682,
+      "originalText": "non so quale parole posso usare",
+      "correctedText": "",
+      "category": "concordanza",
+      "severity": "lieve",
+      "ruleKey": "accordo_aggettivo_interrogativo_quale",
+      "ruleName": "Accordo dell'aggettivo interrogativo 'quale' al plurale",
+      "explanation": "Uso raccomandato in italiano.",
+      "example": "",
+      "status": "rilevata_una_volta",
+      "timesEncountered": 1,
+      "lastPracticed": 1791655573682
+    },
+    {
+      "id": "err_1791655396299",
+      "timestamp": 1791655396299,
+      "originalText": "",
+      "correctedText": "",
+      "category": "concordanza",
+      "severity": "moderata",
+      "ruleKey": "accordo_aggettivo_e_lessico_lavorare",
+      "ruleName": "Accordo di genere dell'aggettivo e distinzione tra lavorare e lavare",
+      "explanation": "Uso raccomandato in italiano.",
+      "example": "",
+      "status": "rilevata_una_volta",
+      "timesEncountered": 1,
+      "lastPracticed": 1791655396299
+    },
+    {
+      "id": "err_1791655322916",
+      "timestamp": 1791655322916,
+      "originalText": "",
+      "correctedText": "",
+      "category": "falsi_amici",
+      "severity": "moderata",
+      "ruleKey": "falso_amico_soggetto_vs_argomento",
+      "ruleName": "Uso di 'argomento' invece di 'soggetto'",
+      "explanation": "Uso raccomandato in italiano.",
+      "example": "",
+      "status": "rilevata_una_volta",
+      "timesEncountered": 1,
+      "lastPracticed": 1791655322916
+    },
+    {
+      "id": "err_1791655197360",
+      "timestamp": 1791655197360,
+      "originalText": "",
+      "correctedText": "",
+      "category": "grammatica",
+      "severity": "moderata",
+      "ruleKey": "esprimere_andamento_giornata",
+      "ruleName": "Esprimere l'andamento della giornata con 'andare male'",
+      "explanation": "Uso raccomandato in italiano.",
+      "example": "",
+      "status": "rilevata_una_volta",
+      "timesEncountered": 1,
+      "lastPracticed": 1791655197360
+    },
+    {
+      "id": "err_1791655133558",
+      "timestamp": 1791655133558,
+      "originalText": "",
+      "correctedText": "",
+      "category": "idiomi",
+      "severity": "lieve",
+      "ruleKey": "chiedere_della_giornata",
+      "ruleName": "Chiedere come è trascorsa la giornata",
+      "explanation": "Uso raccomandato in italiano.",
+      "example": "",
+      "status": "rilevata_una_volta",
+      "timesEncountered": 1,
+      "lastPracticed": 1791655133558
+    },
+    {
+      "id": "err_1791654277667",
+      "timestamp": 1791654277667,
+      "originalText": "",
+      "correctedText": "",
+      "category": "coniugazione",
+      "severity": "moderata",
+      "ruleKey": "passato_prossimo_vs_trapassato",
+      "ruleName": "Uso del passato prossimo per eventi recenti o della giornata",
+      "explanation": "Uso raccomandato in italiano.",
+      "example": "",
+      "status": "rilevata_una_volta",
+      "timesEncountered": 1,
+      "lastPracticed": 1791654277667
+    },
+    {
+      "id": "err_1",
+      "timestamp": 1791480061446,
+      "originalText": "Ieri vado al mercato e compro dei frutti.",
+      "correctedText": "Ieri sono andato al mercato e ho comprato della frutta.",
+      "category": "coniugazione",
+      "severity": "moderata",
+      "ruleKey": "passato_prossimo_vs_presente",
+      "ruleName": "Passato Prossimo per azioni concluse nel passato",
+      "explanation": "Per azioni concluse in un momento passato definito (ieri), si usa il passato prossimo, non il presente. Inoltre si usa il collettivo singolare \"della frutta\".",
+      "example": "Ieri ho visto un bel film e ho mangiato una pizza.",
+      "status": "in_apprendimento",
+      "timesEncountered": 2,
+      "lastPracticed": 1791566461446
+    },
+    {
+      "id": "err_2",
+      "timestamp": 1791566461446,
+      "originalText": "Vado in Italia per imparare la lingua con piacere.",
+      "correctedText": "Vado in Italia per imparare la lingua con piacere.",
+      "category": "preposizioni",
+      "severity": "lieve",
+      "ruleKey": "preposizioni_in_con_nazioni",
+      "ruleName": "Preposizione \"in\" con nomi di stati e nazioni",
+      "explanation": "Uso corretto della preposizione \"in\" con l’Italia. Ottima applicazione della regola!",
+      "example": "Vivo in Italia, vado in Francia.",
+      "status": "in_consolidamento",
+      "timesEncountered": 1,
+      "lastPracticed": 1791566461446
+    }
+  ],
+  "completedSessionsCount": 7,
+  "totalSpeakingTimeSeconds": 2228,
+  "totalWordsProduced": 1300
+}

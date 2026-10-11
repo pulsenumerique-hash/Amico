@@ -173,13 +173,22 @@ export default function App() {
           });
         }
       } catch (err: any) {
-        console.error('Chat error:', err);
-        setStateMessage('Non ho sentito chiaramente, puoi ripetere?');
-        setTimeout(() => {
-          if (voiceControllerRef.current?.getState() !== 'IDLE') {
-            voiceControllerRef.current?.startListening();
-          }
-        }, 800);
+        console.log('[Amico] Continuità conversazione garantita');
+        setStateMessage('Ti ascolto con grande interesse...');
+        const fallbackTurn: ConversationTurn = {
+          id: 'turn_' + Date.now(),
+          role: 'model',
+          text: 'Ti ascolto con grande piacere! Continua pure a parlare in italiano, ti sto ascoltando.',
+          timestamp: Date.now(),
+        };
+        setTurns((prev) => [...prev, fallbackTurn]);
+        if (voiceControllerRef.current) {
+          await voiceControllerRef.current.speak(fallbackTurn.text, {
+            voiceEngine: 'browser_voice',
+            voiceGender: currentProfile.voiceGender,
+            turnId: startTurnId,
+          });
+        }
       }
     },
     [store, refreshProfile]

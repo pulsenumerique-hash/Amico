@@ -435,7 +435,7 @@ export class PedagogicalStoreService {
       }
       this.syncWithServer();
     } catch (e) {
-      console.error('Error persisting profile:', e);
+      console.warn('[Amico Store] Impossibile salvare localmente:', e);
     }
   }
 
@@ -469,7 +469,7 @@ export class PedagogicalStoreService {
       await fetch('/api/user-data', { method: 'DELETE' });
       this.profile = { ...DEFAULT_PROFILE };
     } catch (e) {
-      console.error('Wipe data error:', e);
+      console.warn('[Amico Store] Errore cancellazione dati:', e);
     }
   }
 }

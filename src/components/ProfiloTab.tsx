@@ -25,6 +25,8 @@ import {
   Sparkles,
   HelpCircle,
   AlertTriangle,
+  Mic,
+  Sliders,
 } from 'lucide-react';
 
 interface ProfiloTabProps {
@@ -162,6 +164,51 @@ export const ProfiloTab: React.FC<ProfiloTabProps> = ({
             />
           </div>
 
+          {/* Microphone sensitivity & capture */}
+          <div className="pt-2 border-t border-stone-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-stone-300 font-medium block flex items-center space-x-1">
+                  <Mic className="w-3.5 h-3.5 text-emerald-400 inline" />
+                  <span>Sensibilità Microfono & Riconoscimento:</span>
+                </span>
+                <span className="text-[10px] text-stone-400">
+                  Adatta la sensibilità della cattura per voci delicate o ambienti rumorosi
+                </span>
+              </div>
+              <select
+                value={profile.micSensitivityPreset || 'high'}
+                onChange={(e) => onUpdateProfile({ micSensitivityPreset: e.target.value as any })}
+                className="bg-stone-900 border border-stone-700 rounded-xl px-2.5 py-1 text-stone-200 focus:outline-none focus:border-emerald-500 text-xs"
+              >
+                <option value="high">Alta Sensibilità (Voce dolce / Consigliata)</option>
+                <option value="balanced">Bilanciata (Standard)</option>
+                <option value="noisy_env">Filtro Rumore (Ambiente caotico)</option>
+              </select>
+            </div>
+
+            {/* Software Gain Boost */}
+            <div className="flex items-center justify-between pt-1">
+              <div>
+                <span className="text-stone-300 text-xs block">
+                  Amplificazione Software (Gain): {(profile.micInputGain || 1.4).toFixed(1)}x
+                </span>
+                <span className="text-[10px] text-stone-400">
+                  Aumenta la sensibilità di rilevamento se parli a bassa voce o lontano dal microfono
+                </span>
+              </div>
+              <input
+                type="range"
+                min="1.0"
+                max="2.5"
+                step="0.1"
+                value={profile.micInputGain || 1.4}
+                onChange={(e) => onUpdateProfile({ micInputGain: parseFloat(e.target.value) })}
+                className="w-28 accent-emerald-500 cursor-pointer"
+              />
+            </div>
+          </div>
+
           {/* Pause tolerance */}
           <div className="flex items-center justify-between pt-2 border-t border-stone-800">
             <div>
@@ -176,6 +223,7 @@ export const ProfiloTab: React.FC<ProfiloTabProps> = ({
               <option value="2200">Rapida (2.2s)</option>
               <option value="3000">Naturale (3.0s - consigliata)</option>
               <option value="4000">Ampia / Riflessiva (4.0s)</option>
+              <option value="5000">Molto paziente (5.0s - tempo per cercare i termini)</option>
             </select>
           </div>
         </div>

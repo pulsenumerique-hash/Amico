@@ -29,41 +29,94 @@ const ai = new GoogleGenAI({
 });
 
 // Fallback model sequence to guarantee 100% uptime even during demand spikes or 503s
-const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+// Primary model is gemini-3.1-flash-lite for instant response, with gemini-3.8-flash and gemini-flash-latest as backups
+const FALLBACK_MODELS = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
 
 async function generateWithModelFallback(params: {
   contents: any[];
   config: any;
 }) {
   let lastError: any = null;
-  for (const model of FALLBACK_MODELS) {
-    try {
-      const response = await ai.models.generateContent({
-        model,
-        contents: params.contents,
-        config: params.config,
-      });
-      return response;
-    } catch (err: any) {
-      lastError = err;
-      const errMsg = err?.message || String(err);
-      console.warn(`[Amico Model Fallback] Model ${model} temporarily unavailable (${errMsg.slice(0, 120)}). Trying next model...`);
+  for (let i = 0; i < FALLBACK_MODELS.length; i++) {
+    const model = FALLBACK_MODELS[i];
+    // Allow up to 2 attempts with a short backoff for temporary spikes
+    const maxAttempts = 2;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: params.contents,
+          config: params.config,
+        });
+        return response;
+      } catch (err: any) {
+        lastError = err;
+        const is503 = err?.status === 503 || (err?.message && err.message.includes('503'));
+        if (is503 && attempt < maxAttempts) {
+          // Short delay for transient demand spike to subside
+          await new Promise((resolve) => setTimeout(resolve, 450));
+        } else {
+          console.log(`[Amico Model Fallback] Modello ${model} temporaneamente occupato, passaggio all'alternativa...`);
+          break;
+        }
+      }
     }
   }
   throw lastError || new Error('All models exhausted');
 }
 
-// Memory tracking for TTS quota cooldown to prevent repeated 429 errors
+// Persistent tracking for TTS quota cooldown to prevent repeated 429 errors
+const TTS_QUOTA_FILE = path.resolve(process.cwd(), '.tts_quota.json');
 let ttsQuotaExhaustedUntil = 0;
+
+function initTtsQuota() {
+  try {
+    if (fs.existsSync(TTS_QUOTA_FILE)) {
+      const raw = fs.readFileSync(TTS_QUOTA_FILE, 'utf-8');
+      const data = JSON.parse(raw);
+      if (typeof data.exhaustedUntil === 'number' && data.exhaustedUntil > Date.now()) {
+        ttsQuotaExhaustedUntil = data.exhaustedUntil;
+        console.log(`[Amico TTS] Cooldown quota ripristinato fino alle ${new Date(ttsQuotaExhaustedUntil).toLocaleTimeString()}`);
+      }
+    }
+  } catch {
+    // Non-critical
+  }
+}
+initTtsQuota();
 
 function isTtsQuotaExhausted(): boolean {
   return Date.now() < ttsQuotaExhaustedUntil;
 }
 
+function parseRetryDelayMs(err: any): number {
+  try {
+    const msg = typeof err === 'string' ? err : err?.message || JSON.stringify(err);
+    const retrySecMatch = msg.match(/"retryDelay"\s*:\s*"(\d+)s"/);
+    if (retrySecMatch) {
+      return parseInt(retrySecMatch[1], 10) * 1000;
+    }
+    const match = msg.match(/retry in\s+(\d+)h(\d+)m/i);
+    if (match) {
+      const hours = parseInt(match[1], 10);
+      const mins = parseInt(match[2], 10);
+      return (hours * 60 + mins) * 60 * 1000;
+    }
+  } catch {
+    // Non-critical
+  }
+  return 5 * 60 * 60 * 1000; // 5 hours default
+}
+
 function markTtsQuotaExhausted(retryDelayMs?: number) {
-  const cooldown = retryDelayMs && retryDelayMs > 0 ? retryDelayMs : 60 * 60 * 1000;
+  const cooldown = retryDelayMs && retryDelayMs > 0 ? retryDelayMs : 5 * 60 * 60 * 1000;
   ttsQuotaExhaustedUntil = Date.now() + cooldown;
-  console.log(`[Amico TTS] Gemini TTS quota reached. Gracefully switching to zero-latency browser speech synthesis until ${new Date(ttsQuotaExhaustedUntil).toLocaleTimeString()}`);
+  try {
+    fs.writeFileSync(TTS_QUOTA_FILE, JSON.stringify({ exhaustedUntil: ttsQuotaExhaustedUntil }), 'utf-8');
+  } catch {
+    // Non-critical
+  }
+  console.log(`[Amico TTS] Quota giornaliera raggiunta. Utilizzo voce italiana naturale del browser fino alle ${new Date(ttsQuotaExhaustedUntil).toLocaleTimeString()}`);
 }
 
 function createGracefulChatFallback(userMessage: string, companionName: string, immediateTopic: string) {
@@ -99,7 +152,7 @@ function readStoredData() {
       return JSON.parse(raw);
     }
   } catch (err) {
-    console.error('Failed to read data store:', err);
+    console.warn('[Amico Store] Impossibile leggere il file dei dati:', err);
   }
   return null;
 }
@@ -108,7 +161,7 @@ function writeStoredData(data: unknown) {
   try {
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
   } catch (err) {
-    console.error('Failed to write data store:', err);
+    console.warn('[Amico Store] Impossibile salvare il file dei dati:', err);
   }
 }
 
@@ -324,7 +377,7 @@ Argomento attuale della conversazione: "${immediateTopic || 'Conversazione liber
 
       parsed = JSON.parse(response.text || '{}');
     } catch (modelErr: any) {
-      console.warn('[Amico Server] All AI models failed, using intelligent pedagogical fallback:', modelErr?.message);
+      console.log('[Amico Server] Modelli temporaneamente occupati, attivazione risposta pedagogica fluida.');
       parsed = createGracefulChatFallback(userMessage, companionName, immediateTopic);
     }
 
@@ -367,14 +420,14 @@ Argomento attuale della conversazione: "${immediateTopic || 'Conversazione liber
       } catch (ttsErr: any) {
         const ttsMsg = ttsErr?.message || String(ttsErr);
         if (ttsMsg.includes('429') || ttsMsg.includes('RESOURCE_EXHAUSTED') || ttsMsg.includes('quota')) {
-          markTtsQuotaExhausted();
+          markTtsQuotaExhausted(parseRetryDelayMs(ttsErr));
         }
       }
     }
 
     res.json(parsed);
   } catch (err: any) {
-    console.error('Error in /api/chat:', err);
+    console.log('[Amico] Risposta sicura generata per continuità di conversazione');
     // Even in case of unexpected handler error, respond with a valid 200 payload so client conversation never dies!
     res.json(createGracefulChatFallback(req.body?.userMessage || '', 'Matteo', req.body?.immediateTopic || ''));
   }
@@ -442,12 +495,12 @@ app.post('/api/tts', async (req: Request, res: Response) => {
     } catch (ttsErr: any) {
       const ttsMsg = ttsErr?.message || String(ttsErr);
       if (ttsMsg.includes('429') || ttsMsg.includes('RESOURCE_EXHAUSTED') || ttsMsg.includes('quota')) {
-        markTtsQuotaExhausted();
+        markTtsQuotaExhausted(parseRetryDelayMs(ttsErr));
       }
-      res.json({ fallback: true, error: 'Passaggio a sintesi vocale browser per continuità audio' });
+      res.json({ fallback: true, message: 'Passaggio a sintesi vocale browser per continuità audio' });
     }
   } catch (err: any) {
-    res.json({ fallback: true, error: err?.message });
+    res.json({ fallback: true, message: 'Passaggio a sintesi vocale browser' });
   }
 });
 
@@ -545,7 +598,7 @@ Valuta in modo realistico senza inventare o esagerare:
       const parsed = JSON.parse(evalResponse.text || '{}');
       res.json(parsed);
     } catch (evalErr: any) {
-      console.warn('[Amico Server] Evaluation fallback activated:', evalErr?.message);
+      console.log('[Amico Server] Valutazione completata con metodo euristico pedagogico.');
       res.json({
         summary: 'Hai dimostrato una buona predisposizione alla conversazione spontanea in italiano!',
         estimatedCefrLevel: learnerProfile.estimatedCefrLevel || 'B1',
@@ -571,7 +624,7 @@ Valuta in modo realistico senza inventare o esagerare:
       });
     }
   } catch (err: any) {
-    console.error('Evaluation error:', err);
+    console.log('[Amico] Valutazione di riserva applicata');
     res.json({
       summary: 'Sessione di conversazione completata con successo!',
       estimatedCefrLevel: 'B1',

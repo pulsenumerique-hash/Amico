@@ -388,7 +388,7 @@ export class VoiceSessionController {
       this.transitionTo('LISTENING', 'Ti ascolto: parla pure in italiano...');
       return true;
     } catch (err: any) {
-      console.error('Session start error:', err);
+      console.log('[Amico Voice] Inizializzazione sessione non riuscita:', err?.message || 'Permesso microfono non concesso');
       this.isUserSessionExplicitlyActive = false;
       this.transitionTo('ERROR', err?.message || 'Accesso al microfono negato.');
       this.callbacks.onError('Assicurati di aver concesso il permesso per il microfono nel browser.');
@@ -610,8 +610,10 @@ export class VoiceSessionController {
       const speechScore = Math.max(rms * 130, vocalAvg / 1.4);
       const normalized = Math.min(100, Math.round(Math.pow(speechScore / 100, 0.72) * 100));
 
-      // Voice Activity Detection
-      const isVoiceNow = normalized >= speechThreshold || vocalAvg >= 7 || rms >= 0.006;
+      // Voice Activity Detection (strictly guarded so Amico's speech never triggers user voice activity)
+      const isVoiceNow =
+        this.state === 'LISTENING' &&
+        (normalized >= speechThreshold || vocalAvg >= 7 || rms >= 0.006);
       const now = performance.now();
 
       if (isVoiceNow) {

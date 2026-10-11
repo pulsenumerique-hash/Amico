@@ -521,7 +521,12 @@ app.post('/api/evaluate', async (req: Request, res: Response) => {
     }
 
     const transcriptText = turns
-      .map((t: any) => `${t.role === 'user' ? 'Studente' : 'Amico'}: ${t.text}`)
+      .map((t: any) => {
+        const speaker = t.role === 'user' || t.speaker === 'user' || t.userText ? 'Studente' : 'Amico';
+        const content = t.text || (t.role === 'user' ? t.userText : t.companionText) || t.content || '';
+        return `${speaker}: ${content}`;
+      })
+      .filter((line: string) => line.trim().length > 0)
       .join('\n');
 
     const prompt = `Analizza questa sessione di conversazione in lingua italiana e fornisci una valutazione didattica CECRL approfondita e rigorosa secondo il Quadro Comune Europeo (A1-C2).

@@ -837,9 +837,12 @@ export class VoiceSessionController {
   }
 
   private startRecognitionSafe() {
-    if (!this.recognition) return;
-    if (this.state !== 'LISTENING') return;
+    if (this.state !== 'LISTENING' || !this.isUserSessionExplicitlyActive) return;
     if (this.isRecognitionActive || this.isRecognitionStarting) return;
+
+    if (!this.recognition) {
+      this.initRecognition();
+    }
 
     try {
       this.isRecognitionStarting = true;
@@ -848,13 +851,21 @@ export class VoiceSessionController {
       this.isRecognitionStarting = false;
       this.logDiagnostic('REC_ERROR', `rec.start() exception: ${err?.message || err}`);
 
+      // Re-create the recognition instance to break out of any internal browser lock
+      try {
+        if (this.recognition) {
+          this.recognition.abort();
+        }
+      } catch (e) {}
+      this.initRecognition();
+
       if (this.isUserSessionExplicitlyActive && this.state === 'LISTENING') {
         if (this.restartTimeout) clearTimeout(this.restartTimeout);
         this.restartTimeout = setTimeout(() => {
           if (this.isUserSessionExplicitlyActive && this.state === 'LISTENING' && !this.isRecognitionActive) {
             this.startRecognitionSafe();
           }
-        }, 200);
+        }, 150);
       }
     }
   }
@@ -870,7 +881,8 @@ export class VoiceSessionController {
     }
     if (this.recognition) {
       try {
-        this.recognition.stop();
+        // Immediate cancellation frees up audio resources synchronously
+        this.recognition.abort();
       } catch (e) {}
       this.isRecognitionActive = false;
       this.isRecognitionStarting = false;
@@ -1061,10 +1073,28 @@ export class VoiceSessionController {
         return;
       }
 
+      let isFinished = false;
+      let watchdogTimer: any = null;
+
+      const finishPlayback = () => {
+        if (isFinished) return;
+        isFinished = true;
+        if (watchdogTimer) clearTimeout(watchdogTimer);
+        this.currentAudioElement = null;
+        resolve();
+      };
+
       try {
         const audio = new Audio(`data:audio/wav;base64,${base64}`);
         this.currentAudioElement = audio;
         audio.playbackRate = this.config.voiceSpeed || 1.0;
+
+        // Watchdog to guarantee playback never permanently deadlocks
+        const maxDurationMs = Math.max(8000, Math.round((base64.length / 28000) * 1000) + 4000);
+        watchdogTimer = setTimeout(() => {
+          this.logDiagnostic('AUDIO_PLAY_END', `Watchdog riproduzione WAV scattato (${maxDurationMs}ms)`);
+          finishPlayback();
+        }, maxDurationMs);
 
         audio.onplay = () => {
           this.logDiagnostic('AUDIO_PLAY_START', `Inizio riproduzione audio WAV (Turno #${turnId})`);
@@ -1072,23 +1102,20 @@ export class VoiceSessionController {
 
         audio.onended = () => {
           this.logDiagnostic('AUDIO_PLAY_END', `Fine riproduzione audio WAV (Turno #${turnId})`);
-          this.currentAudioElement = null;
-          resolve();
+          finishPlayback();
         };
 
         audio.onerror = (e) => {
           console.warn('WAV audio playback error:', e);
-          this.currentAudioElement = null;
-          resolve();
+          finishPlayback();
         };
 
         audio.play().catch((err) => {
           console.warn('Audio play rejected:', err);
-          this.currentAudioElement = null;
-          resolve();
+          finishPlayback();
         });
       } catch (e) {
-        resolve();
+        finishPlayback();
       }
     });
   }
@@ -1105,48 +1132,77 @@ export class VoiceSessionController {
         return;
       }
 
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      this.currentUtterance = utterance;
+      let isFinished = false;
+      let resumeInterval: any = null;
+      let watchdogTimer: any = null;
 
-      utterance.lang = 'it-IT';
-      utterance.rate = this.config.voiceSpeed || 1.0;
-      utterance.pitch = this.config.voiceGender === 'male' ? 0.95 : 1.05;
+      const finishSpeech = () => {
+        if (isFinished) return;
+        isFinished = true;
+        if (resumeInterval) clearInterval(resumeInterval);
+        if (watchdogTimer) clearTimeout(watchdogTimer);
+        this.currentUtterance = null;
+        resolve();
+      };
 
-      const voices = window.speechSynthesis.getVoices();
-      const italianVoices = voices.filter((v) => v.lang.startsWith('it') || v.lang.includes('IT'));
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        this.currentUtterance = utterance;
 
-      if (this.config.browserVoiceUri) {
-        const matching = italianVoices.find((v) => v.voiceURI === this.config.browserVoiceUri);
-        if (matching) utterance.voice = matching;
-      } else if (italianVoices.length > 0) {
-        const preferred =
-          italianVoices.find(
-            (v) =>
-              v.name.toLowerCase().includes('google') ||
-              v.name.toLowerCase().includes('natural') ||
-              v.name.toLowerCase().includes('alice') ||
-              v.name.toLowerCase().includes('cosimo')
-          ) || italianVoices[0];
-        utterance.voice = preferred;
+        utterance.lang = 'it-IT';
+        utterance.rate = this.config.voiceSpeed || 1.0;
+        utterance.pitch = this.config.voiceGender === 'male' ? 0.95 : 1.05;
+
+        const voices = window.speechSynthesis.getVoices();
+        const italianVoices = voices.filter((v) => v.lang.startsWith('it') || v.lang.includes('IT'));
+
+        if (this.config.browserVoiceUri) {
+          const matching = italianVoices.find((v) => v.voiceURI === this.config.browserVoiceUri);
+          if (matching) utterance.voice = matching;
+        } else if (italianVoices.length > 0) {
+          const preferred =
+            italianVoices.find(
+              (v) =>
+                v.name.toLowerCase().includes('google') ||
+                v.name.toLowerCase().includes('natural') ||
+                v.name.toLowerCase().includes('alice') ||
+                v.name.toLowerCase().includes('cosimo')
+            ) || italianVoices[0];
+          utterance.voice = preferred;
+        }
+
+        // Chromium speech synthesis bug workaround: keep resume pulsing
+        resumeInterval = setInterval(() => {
+          if (typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.speaking) {
+            window.speechSynthesis.resume();
+          }
+        }, 2500);
+
+        // Safety watchdog based on sentence length
+        const safeTimeoutMs = Math.max(5000, text.length * 110 + 3500);
+        watchdogTimer = setTimeout(() => {
+          this.logDiagnostic('AUDIO_PLAY_END', `Watchdog SpeechSynthesis scattato (${safeTimeoutMs}ms)`);
+          finishSpeech();
+        }, safeTimeoutMs);
+
+        utterance.onstart = () => {
+          this.logDiagnostic('AUDIO_PLAY_START', `Inizio SpeechSynthesis (Turno #${turnId})`);
+        };
+
+        utterance.onend = () => {
+          this.logDiagnostic('AUDIO_PLAY_END', `Fine SpeechSynthesis (Turno #${turnId})`);
+          finishSpeech();
+        };
+
+        utterance.onerror = () => {
+          finishSpeech();
+        };
+
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        finishSpeech();
       }
-
-      utterance.onstart = () => {
-        this.logDiagnostic('AUDIO_PLAY_START', `Inizio SpeechSynthesis (Turno #${turnId})`);
-      };
-
-      utterance.onend = () => {
-        this.logDiagnostic('AUDIO_PLAY_END', `Fine SpeechSynthesis (Turno #${turnId})`);
-        this.currentUtterance = null;
-        resolve();
-      };
-
-      utterance.onerror = () => {
-        this.currentUtterance = null;
-        resolve();
-      };
-
-      window.speechSynthesis.speak(utterance);
     });
   }
 

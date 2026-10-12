@@ -472,4 +472,36 @@ export class PedagogicalStoreService {
       console.warn('[Amico Store] Errore cancellazione dati:', e);
     }
   }
+
+  /**
+   * Generates a pedagogical and personal memory summary for Gemini Live system prompt.
+   * Injected when session resumption handle is expired or unavailable, ensuring total conversational continuity.
+   */
+  public getPedagogicalMemorySummary(): string {
+    const companion = this.profile.companionName || 'Marco';
+    const memoriesList = (this.profile.memories || [])
+      .map((m) => `- [${m.category}] ${m.content}`)
+      .join('\n');
+    const errorsToReview = (this.profile.errors || [])
+      .filter((e) => e.status === 'da_ripassare' || e.status === 'in_apprendimento')
+      .slice(0, 5)
+      .map((e) => `- ${e.ruleName}: "${e.originalText}" -> correzione raccomandata: "${e.correctedText}"`)
+      .join('\n');
+
+    return `
+CONTINUITÀ DELLA MEMORIA (SEGNALATORE DI RIPRESA):
+Sei ${companion}. Conosci già molto bene questo studente. Non salutare come se fosse la prima volta!
+- Nome studente: ${this.profile.name || 'Studente'}
+- Livello stimato: ${this.profile.estimatedCefrLevel || 'B1'}
+- Stile di conversazione: ${this.profile.conversationStyle || 'amico'} (spontaneo, amichevole, parlata viva)
+
+MEMORIE PERSONALI E INTERESSI:
+${memoriesList || '- Nessuna memoria specifica registrata.'}
+
+PUNTI GRAMMATICALI IN FASE DI APPRENDIMENTO:
+${errorsToReview || '- Nessuna lacuna particolare.'}
+`.trim();
+  }
 }
+
+export const pedagogicalStore = PedagogicalStoreService.getInstance();

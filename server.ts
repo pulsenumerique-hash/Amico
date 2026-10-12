@@ -55,6 +55,32 @@ app.get('/api/health', (req: Request, res: Response) => {
   });
 });
 
+// Ephemeral token generation endpoint for Gemini Live API
+app.all('/api/token', async (req: Request, res: Response) => {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    res.status(500).json({
+      error: 'GEMINI_API_KEY non configurata',
+      hint: 'Aggiungi GEMINI_API_KEY nelle variabili d\'ambiente di Vercel o in .env',
+    });
+    return;
+  }
+  try {
+    const { GoogleGenAI } = await import('@google/genai');
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        apiVersion: 'v1alpha',
+        headers: { 'User-Agent': 'aistudio-build' },
+      },
+    });
+    const token = await ai.authTokens.create({ config: { uses: 5 } });
+    res.json({ token: token.name, expireTime: (token as any).expireTime, status: 'ok' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Errore generazione token effimero', message: err?.message });
+  }
+});
+
 // Conversational and Pedagogical chat endpoint
 app.post('/api/chat', async (req: Request, res: Response) => {
   try {

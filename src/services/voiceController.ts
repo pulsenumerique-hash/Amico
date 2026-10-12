@@ -4,6 +4,12 @@
  */
 
 import { VoiceState, AudioDiagnosticLog, TurnLatencyMetrics, MicSensitivityPreset } from '../types';
+import {
+  AudioStreamQueuePlayer,
+  PcmMicrophoneCapture,
+} from './pcmAudioEngine';
+import { GeminiLiveSession } from './geminiLiveSession';
+import { wakeLockService } from './wakeLockService';
 
 export interface VoiceControllerCallbacks {
   onStateChange: (state: VoiceState, message?: string) => void;
@@ -16,6 +22,7 @@ export interface VoiceControllerCallbacks {
   onError: (errorText: string) => void;
   onDiagnosticLog?: (log: AudioDiagnosticLog) => void;
   onLatencyMetric?: (metrics: TurnLatencyMetrics) => void;
+  onReconnecting?: (isReconnecting: boolean, message?: string) => void;
 }
 
 export interface VoiceConfig {
@@ -160,7 +167,11 @@ export class VoiceSessionController {
   private isVocalActivityOngoing = false;
   private lastVocalEnergyTimestamp = 0;
 
-  // Audio Playback Elements
+  // Audio Playback Elements & Sample-accurate 24 kHz Queue Player
+  private queuePlayer: AudioStreamQueuePlayer;
+  private pcmCapture: PcmMicrophoneCapture | null = null;
+  private liveSession: GeminiLiveSession | null = null;
+  private currentPlaybackResolve: (() => void) | null = null;
   private currentAudioElement: HTMLAudioElement | null = null;
   private currentUtterance: SpeechSynthesisUtterance | null = null;
   private abortController: AbortController | null = null;
@@ -179,6 +190,22 @@ export class VoiceSessionController {
       micInputGain: 1.4,
       ...config,
     };
+
+    // 24 kHz sample-accurate queue player
+    this.queuePlayer = new AudioStreamQueuePlayer(24000, {
+      onPlaybackStart: () => {
+        this.logDiagnostic('AUDIO_PLAY_START', `Inizio riproduzione audio su timeline (Turno #${this.currentTurnId})`);
+      },
+      onQueueFinished: () => {
+        this.logDiagnostic('AUDIO_PLAY_END', `Fine riproduzione di tutti i blocchi audio (Turno #${this.currentTurnId})`);
+        if (this.currentPlaybackResolve) {
+          const res = this.currentPlaybackResolve;
+          this.currentPlaybackResolve = null;
+          res();
+        }
+      },
+    });
+
     this.logDiagnostic('REC_START', 'Inizializzazione VoiceSessionController (Stato: IDLE)', 'inactive');
   }
 
@@ -321,6 +348,11 @@ export class VoiceSessionController {
     const oldState = this.state;
     this.state = newState;
 
+    // Update PCM capture monitor state for automatic barge-in detection
+    if (this.pcmCapture) {
+      this.pcmCapture.setAiSpeaking(newState === 'SPEAKING');
+    }
+
     this.logDiagnostic(
       newState === 'ERROR' ? 'REC_ERROR' : 'REC_START',
       `Transizione stato: ${oldState} -> ${newState}. ${message || ''}`
@@ -376,12 +408,60 @@ export class VoiceSessionController {
     this.logDiagnostic('USER_START', `Avvio sessione vocale (Turno #${this.currentTurnId})`);
 
     try {
+      // 1. Crucial for iOS Safari & Chrome: unlock AudioContext synchronously on user gesture!
+      await this.queuePlayer.unlockOnUserGesture();
+
+      // 2. Mobile Wake Lock: prevent screen from dimming/sleeping during hours of conversation
+      await wakeLockService.acquireLock();
+
       this.transitionTo('LISTENING', 'Connessione al microfono...');
 
-      // 1. Initialize microphone hardware
+      // 3. Initialize microphone hardware & 16kHz PCM capture
       await this.initMicrophone();
 
-      // 2. Initialize Speech Recognition
+      // 4. Connect directly to Gemini Live API over WebSocket with ephemeral token
+      this.liveSession = new GeminiLiveSession(
+        {
+          onAudioChunk: (base64Audio) => {
+            this.transitionTo('SPEAKING', 'Amico sta parlando...');
+            this.queuePlayer.enqueueChunk(base64Audio);
+          },
+          onUserTranscript: (userText) => {
+            this.callbacks.onInterimTranscript(userText);
+          },
+          onAssistantTranscript: (assistantText) => {
+            this.callbacks.onAssistantSpeechStart(assistantText);
+          },
+          onTurnComplete: () => {
+            this.callbacks.onAssistantSpeechEnd();
+            this.transitionTo('LISTENING', 'Ti ascolto: parla pure in italiano...');
+          },
+          onInterrupted: () => {
+            this.queuePlayer.stopAll();
+            this.transitionTo('LISTENING', 'Ti ascolto: parla pure in italiano...');
+          },
+          onReconnecting: (isReconnecting, message) => {
+            if (this.callbacks.onReconnecting) {
+              this.callbacks.onReconnecting(isReconnecting, message);
+            }
+          },
+          onError: (errMsg) => {
+            console.warn('[Amico Live Error]', errMsg);
+          },
+          onConnected: () => {
+            this.transitionTo('LISTENING', 'Connessione Live attiva: ti ascolto...');
+          },
+        },
+        {
+          voiceGender: this.config.voiceGender,
+        }
+      );
+
+      this.liveSession.connect().catch((err) => {
+        console.warn('[Amico Live] WebSocket non disponibile, fallback su riconoscimento web:', err);
+      });
+
+      // 5. Initialize Speech Recognition as complementary layer
       this.initRecognition();
       this.startRecognitionSafe();
 
@@ -390,8 +470,17 @@ export class VoiceSessionController {
     } catch (err: any) {
       console.log('[Amico Voice] Inizializzazione sessione non riuscita:', err?.message || 'Permesso microfono non concesso');
       this.isUserSessionExplicitlyActive = false;
-      this.transitionTo('ERROR', err?.message || 'Accesso al microfono negato.');
-      this.callbacks.onError('Assicurati di aver concesso il permesso per il microfono nel browser.');
+      const isPerm =
+        err?.name === 'NotAllowedError' ||
+        err?.name === 'PermissionDeniedError' ||
+        err?.message?.includes('Permission');
+      const errText = isPerm
+        ? 'Accès au micro refusé. Veuillez autoriser le microphone dans votre navigateur.'
+        : err?.name === 'NotFoundError'
+        ? 'Aucun microphone détecté sur cet appareil.'
+        : 'Accesso al microfono non riuscito.';
+      this.transitionTo('ERROR', errText);
+      this.callbacks.onError(errText);
       return false;
     }
   }
@@ -411,8 +500,13 @@ export class VoiceSessionController {
 
     this.clearTurnBuffers();
     this.cancelPendingActions();
+    if (this.liveSession) {
+      this.liveSession.disconnect();
+      this.liveSession = null;
+    }
     this.stopRecognition();
     this.stopMicrophone();
+    wakeLockService.releaseLock();
     this.transitionTo('IDLE', 'Sessione terminata.');
   }
 
@@ -451,6 +545,14 @@ export class VoiceSessionController {
   }
 
   private stopAudioPlayback() {
+    this.queuePlayer.stopAll();
+
+    if (this.currentPlaybackResolve) {
+      const res = this.currentPlaybackResolve;
+      this.currentPlaybackResolve = null;
+      res();
+    }
+
     if (this.currentAudioElement) {
       this.currentAudioElement.pause();
       this.currentAudioElement.currentTime = 0;
@@ -467,6 +569,10 @@ export class VoiceSessionController {
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = null;
+    }
+
+    if (this.liveSession) {
+      this.liveSession.interrupt();
     }
 
     this.stopAudioPlayback();
@@ -568,6 +674,36 @@ export class VoiceSessionController {
         console.warn('Inizializzazione AudioContext non riuscita:', audioCtxErr);
       }
     }
+
+    // Initialize 16 kHz 16-bit PCM continuous capture and VAD Barge-in monitor
+    try {
+      if (!this.pcmCapture) {
+        this.pcmCapture = new PcmMicrophoneCapture({
+          onVolumeChange: () => {},
+          onVoiceActivity: () => {},
+          onPcmChunk: (_pcm, base64) => {
+            if (this.liveSession && this.liveSession.isConnected()) {
+              this.liveSession.sendRealtimeAudio(base64);
+            }
+          },
+          onBargeIn: () => {
+            if (this.state === 'SPEAKING' || this.state === 'PROCESSING') {
+              this.logDiagnostic(
+                'REC_SPEECH_START',
+                'Interruzione vocale automatica: voce utente rilevata durante la risposta (Barge-in VAD)'
+              );
+              this.interrupt();
+            }
+          },
+          onError: (msg) => {
+            console.warn('[Amico PCM Capture]', msg);
+          },
+        });
+      }
+      await this.pcmCapture.start();
+    } catch (pcmErr) {
+      console.warn('[Amico] Errore avvio cattura PCM:', pcmErr);
+    }
   }
 
   private startVolumeMonitoring() {
@@ -652,6 +788,10 @@ export class VoiceSessionController {
     if (this.gainNode) {
       this.gainNode.disconnect();
       this.gainNode = null;
+    }
+    if (this.pcmCapture) {
+      this.pcmCapture.stop();
+      this.pcmCapture = null;
     }
     if (this.audioContext) {
       this.audioContext.close().catch(() => {});
@@ -997,7 +1137,7 @@ export class VoiceSessionController {
     options?: {
       voiceEngine?: 'gemini_neural' | 'browser_voice';
       voiceGender?: 'male' | 'female';
-      ttsAudioBase64?: string;
+      ttsAudioBase64?: string | string[];
       turnId?: number;
     }
   ): Promise<void> {
@@ -1028,7 +1168,7 @@ export class VoiceSessionController {
     const engine = options?.voiceEngine || this.config.voiceEngine;
     const gender = options?.voiceGender || this.config.voiceGender;
 
-    // 1. If audio base64 is already supplied (e.g. from single-roundtrip /api/chat)
+    // 1. If audio base64 is already supplied (single chunk or multiple chunks)
     if (options?.ttsAudioBase64) {
       await this.playBase64Audio(options.ttsAudioBase64, turnId);
       this.onPlaybackConcluded(turnId);
@@ -1066,9 +1206,15 @@ export class VoiceSessionController {
     this.onPlaybackConcluded(turnId);
   }
 
-  private playBase64Audio(base64: string, turnId: number): Promise<void> {
-    return new Promise((resolve) => {
+  private playBase64Audio(base64: string | string[], turnId: number): Promise<void> {
+    return new Promise(async (resolve) => {
       if (turnId !== this.currentTurnId) {
+        resolve();
+        return;
+      }
+
+      const chunks = Array.isArray(base64) ? base64.filter(Boolean) : [base64].filter(Boolean);
+      if (chunks.length === 0) {
         resolve();
         return;
       }
@@ -1080,41 +1226,31 @@ export class VoiceSessionController {
         if (isFinished) return;
         isFinished = true;
         if (watchdogTimer) clearTimeout(watchdogTimer);
-        this.currentAudioElement = null;
+        this.currentPlaybackResolve = null;
         resolve();
       };
 
+      this.currentPlaybackResolve = finishPlayback;
+
+      // Safe watchdog based on audio chunk payload size
+      const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
+      const maxDurationMs = Math.max(9000, Math.round((totalLen / 24000) * 1000) + 5000);
+      watchdogTimer = setTimeout(() => {
+        this.logDiagnostic(
+          'AUDIO_PLAY_END',
+          `Watchdog riproduzione coda audio scattato (${maxDurationMs}ms)`
+        );
+        finishPlayback();
+      }, maxDurationMs);
+
       try {
-        const audio = new Audio(`data:audio/wav;base64,${base64}`);
-        this.currentAudioElement = audio;
-        audio.playbackRate = this.config.voiceSpeed || 1.0;
-
-        // Watchdog to guarantee playback never permanently deadlocks
-        const maxDurationMs = Math.max(8000, Math.round((base64.length / 28000) * 1000) + 4000);
-        watchdogTimer = setTimeout(() => {
-          this.logDiagnostic('AUDIO_PLAY_END', `Watchdog riproduzione WAV scattato (${maxDurationMs}ms)`);
-          finishPlayback();
-        }, maxDurationMs);
-
-        audio.onplay = () => {
-          this.logDiagnostic('AUDIO_PLAY_START', `Inizio riproduzione audio WAV (Turno #${turnId})`);
-        };
-
-        audio.onended = () => {
-          this.logDiagnostic('AUDIO_PLAY_END', `Fine riproduzione audio WAV (Turno #${turnId})`);
-          finishPlayback();
-        };
-
-        audio.onerror = (e) => {
-          console.warn('WAV audio playback error:', e);
-          finishPlayback();
-        };
-
-        audio.play().catch((err) => {
-          console.warn('Audio play rejected:', err);
-          finishPlayback();
-        });
-      } catch (e) {
+        this.logDiagnostic(
+          'AUDIO_PLAY_START',
+          `Inizio riproduzione di ${chunks.length} blocco/i audio a 24 kHz (Turno #${turnId})`
+        );
+        await this.queuePlayer.enqueueMultipleChunks(chunks);
+      } catch (err) {
+        console.warn('Queue player audio error:', err);
         finishPlayback();
       }
     });

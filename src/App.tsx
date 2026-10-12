@@ -84,6 +84,7 @@ export default function App() {
   const [isEvaluationOpen, setIsEvaluationOpen] = useState(false);
   const [diagnosticLogs, setDiagnosticLogs] = useState<AudioDiagnosticLog[]>([]);
   const [lastLatencyMetrics, setLastLatencyMetrics] = useState<TurnLatencyMetrics | null>(null);
+  const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
 
   // Stable references for state accessed by asynchronous voice handler
   const profileRef = useRef(profile);
@@ -279,6 +280,12 @@ export default function App() {
         },
         onLatencyMetric: (metrics) => {
           setLastLatencyMetrics(metrics);
+        },
+        onReconnecting: (reconnecting, msg) => {
+          setIsReconnecting(reconnecting);
+          if (reconnecting && msg) {
+            setStateMessage(msg);
+          }
         },
       },
       {
@@ -488,6 +495,7 @@ export default function App() {
             hardwareMicState={voiceControllerRef.current?.getHardwareMicState() || 'inactive'}
             isRecognitionActive={voiceControllerRef.current?.isRecognitionRunning() || false}
             lastLatencyMetrics={lastLatencyMetrics}
+            isReconnecting={isReconnecting}
             onSelectTopic={(t) => setActiveTopic(t)}
             onStartSession={handleStartSession}
             onStopSession={handleStopSession}

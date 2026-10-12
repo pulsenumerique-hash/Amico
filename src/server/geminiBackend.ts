@@ -5,9 +5,9 @@
 
 import { GoogleGenAI, Type } from '@google/genai';
 
-// Retrieve API key from server environment or client-exposed env var
+// Retrieve API key securely from server environment variable (never hardcoded)
 export function getApiKey(): string {
-  return process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '';
+  return process.env.GEMINI_API_KEY || '';
 }
 
 export function createGeminiClient(): GoogleGenAI | null {
@@ -178,6 +178,44 @@ export function createDynamicPedagogicalFallback(
 }
 
 /**
+ * Sliding Window Context Compression:
+ * Compresses older conversation turns into high-density episodic memory
+ * so long multi-hour voice sessions never exceed token budgets or lose context.
+ */
+export function compressSlidingWindowHistory(history: any[]): { summaryContext: string; recentTurns: any[] } {
+  if (!history || history.length <= 8) {
+    return { summaryContext: '', recentTurns: history || [] };
+  }
+
+  // Sliding window: preserve most recent 8 turns verbatim
+  const olderTurns = history.slice(0, -8);
+  const recentTurns = history.slice(-8);
+
+  // Compress older turns into compact episodic memory bullets
+  const userHighlights: string[] = [];
+  const companionHighlights: string[] = [];
+
+  for (const t of olderTurns) {
+    const text = (t.text || '').trim();
+    if (!text) continue;
+    const brief = text.length > 70 ? text.slice(0, 70) + '...' : text;
+    if (t.role === 'user') {
+      userHighlights.push(brief);
+    } else {
+      companionHighlights.push(brief);
+    }
+  }
+
+  const summaryContext = `
+MEMORIA PROGRESSIVA DELLA SESSIONE (Finestra di contesto compressa per sessioni prolungate):
+- Temi e aneddoti condivisi dall'utente in precedenza: ${userHighlights.slice(-6).map((h) => `"${h}"`).join('; ')}
+- Concetti discussi con te in precedenza: ${companionHighlights.slice(-4).map((h) => `"${h}"`).join('; ')}
+(Mantieni coerenza con questi argomenti se l'utente vi fa riferimento)`;
+
+  return { summaryContext, recentTurns };
+}
+
+/**
  * Core chat handler processing conversation turn and optionally generating neural audio
  */
 export async function processChatConversation(body: any) {
@@ -211,6 +249,9 @@ export async function processChatConversation(body: any) {
   if (!apiKey) {
     return createDynamicPedagogicalFallback(userMessage, companionName, immediateTopic);
   }
+
+  // Apply context window sliding compression
+  const { summaryContext, recentTurns } = compressSlidingWindowHistory(conversationHistory);
 
   const unresolvedErrorsSummary = (errors || [])
     .filter((e: any) => e.status !== 'padroneggiata')
@@ -251,11 +292,11 @@ ${unresolvedErrorsSummary || 'Nessuna difficoltà recente registrata.'}
 
 MEMORIA PERSONALE DELL'UTENTE (Interessi e progetti noti):
 ${personalMemoriesSummary || 'Nessun ricordo personale registrato.'}
-
+${summaryContext}
 Argomento attuale della conversazione: "${immediateTopic || 'Conversazione libera'}".`;
 
   const contents: any[] = [];
-  for (const turn of (conversationHistory || []).slice(-8)) {
+  for (const turn of recentTurns) {
     contents.push({
       role: turn.role === 'model' ? 'model' : 'user',
       parts: [{ text: turn.text }],

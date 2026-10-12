@@ -32,6 +32,7 @@ import {
   Layers,
   Activity,
   Terminal,
+  RefreshCw,
 } from 'lucide-react';
 import { TOPIC_CATALOG } from '../data/curriculum';
 
@@ -48,6 +49,7 @@ interface VoiceCockpitProps {
   hardwareMicState?: 'live' | 'muted' | 'ended' | 'inactive';
   isRecognitionActive?: boolean;
   lastLatencyMetrics?: TurnLatencyMetrics | null;
+  isReconnecting?: boolean;
   onSelectTopic: (topic: TopicCatalogItem | null) => void;
   onStartSession: () => void;
   onStopSession: () => void;
@@ -73,6 +75,7 @@ export const VoiceCockpit: React.FC<VoiceCockpitProps> = ({
   hardwareMicState = 'inactive',
   isRecognitionActive = false,
   lastLatencyMetrics = null,
+  isReconnecting = false,
   onSelectTopic,
   onStartSession,
   onStopSession,
@@ -107,7 +110,20 @@ export const VoiceCockpit: React.FC<VoiceCockpitProps> = ({
   const isListening = voiceState === 'LISTENING';
   const isProcessing = voiceState === 'PROCESSING';
   const isInterrupted = voiceState === 'INTERRUPTING';
+  const isError = voiceState === 'ERROR';
   const isSessionActive = voiceState !== 'IDLE' && voiceState !== 'ERROR';
+
+  const stateBadge = isListening
+    ? { primary: "Je t'écoute", italian: 'Ti ascolto', color: 'text-emerald-300' }
+    : isProcessing
+    ? { primary: 'Je réfléchis...', italian: 'Sto riflettendo', color: 'text-blue-300' }
+    : isSpeaking
+    ? { primary: 'Je parle', italian: 'Sto parlando', color: 'text-emerald-300' }
+    : isInterrupted
+    ? { primary: 'Interrompu', italian: 'Interrotto', color: 'text-rose-300' }
+    : isError
+    ? { primary: 'Erreur micro', italian: 'Errore', color: 'text-rose-400' }
+    : { primary: 'Prêt', italian: 'Pronto', color: 'text-stone-300' };
 
   const lastTurn = turns.length > 0 ? turns[turns.length - 1] : null;
 
@@ -135,8 +151,15 @@ export const VoiceCockpit: React.FC<VoiceCockpitProps> = ({
             <ChevronDown className="w-3.5 h-3.5 text-stone-400 shrink-0" />
           </button>
 
-          {/* Quick Config Button */}
+          {/* Quick Config Button & Reconnecting status */}
           <div className="flex items-center space-x-1.5">
+            {isReconnecting && (
+              <div className="flex items-center space-x-1.5 px-2 py-1 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[10px] font-semibold animate-pulse">
+                <RefreshCw className="w-3 h-3 animate-spin text-amber-400" />
+                <span>Reconnexion…</span>
+              </div>
+            )}
+
             <button
               onClick={() => setShowModeSettings(!showModeSettings)}
               className="p-1.5 rounded-lg bg-stone-700/60 hover:bg-stone-700 text-stone-300 text-xs flex items-center space-x-1 transition-colors"
@@ -424,9 +447,9 @@ export const VoiceCockpit: React.FC<VoiceCockpitProps> = ({
 
         {/* Processing Indicator */}
         {isProcessing && (
-          <div className="flex items-center space-x-2 text-stone-400 text-xs bg-stone-800/40 border border-stone-700/40 w-fit px-3 py-1.5 rounded-full animate-pulse">
-            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <span>{profile.companionName} sta riflettendo...</span>
+          <div className="flex items-center space-x-2 text-stone-300 text-xs bg-stone-800/80 border border-blue-500/40 w-fit px-3 py-1.5 rounded-full animate-pulse shadow-md">
+            <div className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
+            <span className="font-medium">Je réfléchis... (Sto riflettendo)</span>
           </div>
         )}
 
@@ -435,6 +458,28 @@ export const VoiceCockpit: React.FC<VoiceCockpitProps> = ({
 
       {/* Voice Cockpit Central Controller */}
       <div className="bg-stone-900/95 border border-stone-800 rounded-3xl p-4 shadow-xl relative backdrop-blur-md">
+        {/* Error Alert with actionable guidance */}
+        {isError && (
+          <div className="mb-3 p-3 bg-rose-950/80 border border-rose-600/50 rounded-2xl text-xs text-rose-200 flex items-start space-x-2.5 shadow-lg">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-1">
+              <p className="font-semibold text-rose-200">
+                {stateMessage || 'Erreur d’accès au microphone'}
+              </p>
+              <p className="text-[11px] text-rose-300/80 leading-relaxed">
+                Cliquez sur l'icône de cadenas dans la barre d'adresse du navigateur pour autoriser le micro, puis cliquez sur <strong>Commencer</strong>.
+              </p>
+              <button
+                type="button"
+                onClick={onStartSession}
+                className="mt-1 px-3 py-1 rounded-lg bg-rose-500 hover:bg-rose-400 text-stone-950 font-bold text-xs transition-colors"
+              >
+                Réessayer
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Status Text and Visualizer Bars */}
         <div className="flex items-center justify-between mb-3 px-2">
           <div className="flex items-center space-x-2">
@@ -454,17 +499,19 @@ export const VoiceCockpit: React.FC<VoiceCockpitProps> = ({
               }`}
             />
             <div className="flex items-center space-x-1.5">
-              <span className="text-xs font-medium text-stone-300">
-                {stateMessage ||
-                  (isListening
-                    ? isVoiceActive
-                      ? 'Ti ascolto: voce rilevata'
-                      : 'Ti ascolto...'
-                    : isSpeaking
-                    ? `${profile.companionName} parla`
-                    : 'Pronto')}
+              <span className={`text-xs font-bold ${stateBadge.color}`}>
+                {stateBadge.primary}
               </span>
-              {isListening && (isVoiceActive || micVolume >= 6) && (
+              <span className="text-[10px] text-stone-400 font-medium">
+                ({stateBadge.italian})
+              </span>
+              {isReconnecting && (
+                <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-semibold flex items-center space-x-1 animate-pulse">
+                  <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                  <span>Reconnexion silencieuse…</span>
+                </span>
+              )}
+              {isListening && !isReconnecting && (isVoiceActive || micVolume >= 6) && (
                 <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-semibold animate-pulse">
                   {micVolume < 18 ? 'Voce dolce rilevata' : 'Voce attiva'}
                 </span>
@@ -668,10 +715,11 @@ export const VoiceCockpit: React.FC<VoiceCockpitProps> = ({
             <button
               onClick={onStartSession}
               className="group relative flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 text-stone-950 shadow-xl shadow-emerald-500/25 hover:shadow-emerald-500/40 active:scale-95 transition-all focus:outline-none"
+              aria-label="Commencer la conversation vocale"
             >
               <Mic className="w-9 h-9 stroke-[2.2] group-hover:scale-110 transition-transform" />
-              <span className="absolute -bottom-6 text-[11px] font-bold text-emerald-400 uppercase tracking-wider">
-                Inizia
+              <span className="absolute -bottom-6 text-[11px] font-bold text-emerald-400 uppercase tracking-wider whitespace-nowrap">
+                Commencer
               </span>
             </button>
           ) : (
@@ -680,7 +728,7 @@ export const VoiceCockpit: React.FC<VoiceCockpitProps> = ({
               <button
                 onClick={onStopSession}
                 className="flex items-center justify-center w-14 h-14 rounded-full bg-stone-800 text-rose-400 hover:bg-stone-700 border border-stone-700 shadow-md active:scale-95 transition-all"
-                title="Termina sessione"
+                title="Terminer la session"
               >
                 <Square className="w-5 h-5 fill-rose-400" />
               </button>
@@ -690,14 +738,15 @@ export const VoiceCockpit: React.FC<VoiceCockpitProps> = ({
                 <button
                   onClick={onInterrupt}
                   className="flex items-center space-x-2 px-5 py-3 rounded-full bg-rose-500 hover:bg-rose-400 text-stone-950 font-bold text-xs shadow-lg shadow-rose-500/30 active:scale-95 transition-all animate-pulse"
+                  title="Interrompre Amico immédiatement"
                 >
                   <VolumeX className="w-4 h-4 stroke-[2.5]" />
-                  <span>Interrompi</span>
+                  <span>Je parle • Interrompre</span>
                 </button>
               ) : (
                 <div className="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  <span>In ascolto...</span>
+                  <span>Je t'écoute...</span>
                 </div>
               )}
             </div>
